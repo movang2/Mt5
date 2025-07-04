@@ -719,7 +719,7 @@
         }
 
         // Tự động cập nhật biểu đồ mỗi 1 phút (chỉ cập nhật dữ liệu lịch sử và vẽ lại, giá hiện tại từ WebSocket)
-        setInterval(updateChart, 60000);
+        setInterval(updateChart, 1000000);
 
         // Tải biểu đồ và kết nối WebSocket khi trang mở
         window.onload = () => {
