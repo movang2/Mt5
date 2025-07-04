@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phân tích giá BTC với Giao dịch Tự động</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        #chartContainer {
+            width: 80%;
+            margin: 0 auto;
+        }
+        #suggestions {
+            margin-top: 20px;
+            font-size: 1.2em;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        #history {
+            margin-top: 20px;
+            text-align: left;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        #history h2 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+        #history ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        #history ul li {
+            padding: 5px;
+            border-bottom: 1px solid #ddd;
+        }
+        #history ul li:last-child {
+            border-bottom: none;
+        }
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #priceInputContainer {
+            margin-top: 20px;
+        }
+        #priceInput {
+            padding: 5px;
+            width: 200px;
+        }
+        .trading-controls {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9f7fe;
+            border-radius: 8px;
+            text-align: left;
+        }
+        .trading-controls label {
+            display: inline-block;
+            width: 150px;
+            margin-bottom: 10px;
+        }
+        .trading-controls input {
+            width: 100px;
+            padding: 5px;
+        }
+        .trading-status {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .active-trade {
+            background-color: #fff3cd;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .trade-history {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .profit {
+            color: green;
+            font-weight: bold;
+        }
+        .loss {
+            color: red;
+            font-weight: bold;
+        }
+        .trade-details {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Phân tích giá BTC với Giao dịch Tự động</h1>
+        
+        <div class="trading-controls">
+            <h2>Thiết lập giao dịch</h2>
+            <div>
+                <label for="virtualBalance">Số dư ảo (USD):</label>
+                <input type="number" id="virtualBalance" value="1000" min="100">
+            </div>
+            <div>
+                <label for="leverage">Đòn bẩy:</label>
+                <input type="number" id="leverage" value="10" min="1" max="100">
+            </div>
+            <div>
+                <label for="lotSize">Lot size:</label>
+                <input type="number" id="lotSize" value="0.1" min="0.01" step="0.01">
+            </div>
+            <div>
+                <label for="stopLoss">Stop Loss (USD):</label>
+                <input type="number" id="stopLoss" value="5" min="1" step="0.5">
+            </div>
+            <div>
+                <label for="takeProfit">Take Profit (USD):</label>
+                <input type="number" id="takeProfit" value="2.5" min="1" step="0.5">
+            </div>
+            <div>
+                <label for="maxTradesPerDay">Số lệnh/ngày:</label>
+                <input type="number" id="maxTradesPerDay" value="10" min="1">
+            </div>
+            <button onclick="startAutoTrading()">Bắt đầu giao dịch tự động</button>
+            <button onclick="stopAutoTrading()">Dừng giao dịch</button>
+        </div>
+        
+        <div class="trading-status" id="tradingStatus">
+            Trạng thái: Chưa bắt đầu giao dịch
+        </div>
+        
+        <div class="active-trade" id="activeTradeInfo" style="display: none;">
+            <h3>Lệnh hiện tại</h3>
+            <div id="currentTradeDetails"></div>
+        </div>
+        
+        <div id="chartContainer">
+            <canvas id="btcChart"></canvas>
+        </div>
+        
+        <div id="suggestions">Đang phân tích...</div>
+        <button onclick="updateChart()">Cập nhật biểu đồ</button>
+        
+        <div>
+            <label for="audioInput">Chọn âm thanh thông báo:</label>
+            <input type="file" id="audioInput" accept="audio/*" onchange="loadAudio(event)">
+        </div>
+        
+        <div id="priceInputContainer">
+            <label for="priceInput">Nhập các mốc giá quan trọng (cách nhau bằng dấu phẩy):</label><br>
+            <input type="text" id="priceInput" placeholder="VD: 50000, 51000, 52000">
+            <button onclick="setPriceLevels()">Cập nhật mốc giá</button>
+            <button onclick="stopAudio()">Dừng âm thanh</button>
+        </div>
+        
+        <div id="history">
+            <h2>Lịch sử giao dịch</h2>
+            <div class="trade-history">
+                <ul id="historyList"></ul>
+            </div>
+            <button onclick="clearHistory()">Xóa toàn bộ lịch sử</button>
+        </div>
+    </div>
+
+    <script>
+        const kamaParams = {
+            efficiencyRatioTrend: 6,
+            efficiencyRatioFast: 13,
+            fastestEMATrend: 13,
+            slowestEMATrend: 54,
+            fastestEMAFast: 5,
+            slowestEMAFast: 24
+        };
+        const vwmaParams = {
+            fastLength: 13,
+            slowLength: 27
+        };
+        const stochasticParams = {
+            kLength: 27,
+            kSmoothing: 4,
+            dSmoothing: 13
+        };
+        let btcData = []; // Sẽ chứa dữ liệu OHLC
+        let currentPriceData = { close: 0, high: 0, low: 0, time: '' }; // Lưu trữ giá hiện tại từ WebSocket
+        let chart;
+        let history = [];
+        let notificationAudio = null;
+        let priceLevels = [];
+        let lastPriceCrossed = null;
+        let audioInterval = null;
+        
+        let autoTradingActive = false;
+        let currentTrade = null;
+        let tradesToday = 0;
+        let lastTradeDay = null;
+        let virtualBalance = 1000;
+        let tradingInterval = null;
+
+        function startAutoTrading() {
+            virtualBalance = parseFloat(document.getElementById('virtualBalance').value);
+            const leverage = parseInt(document.getElementById('leverage').value);
+            const lotSize = parseFloat(document.getElementById('lotSize').value);
+            const stopLoss = parseFloat(document.getElementById('stopLoss').value);
+            const takeProfit = parseFloat(document.getElementById('takeProfit').value);
+            const maxTradesPerDay = parseInt(document.getElementById('maxTradesPerDay').value);
+
+            const today = new Date().getDate();
+            if (lastTradeDay !== today) {
+                tradesToday = 0;
+                lastTradeDay = today;
+            }
+            
+            if (tradesToday >= maxTradesPerDay) {
+                alert(`Đã đạt giới hạn ${maxTradesPerDay} lệnh/ngày!`);
+                return;
+            }
+            
+            autoTradingActive = true;
+            document.getElementById('tradingStatus').textContent = 
+                `Trạng thái: Đang chạy tự động | Số dư: $${virtualBalance.toFixed(2)} | Lệnh hôm nay: ${tradesToday}/${maxTradesPerDay}`;
+            
+            if (!currentTrade) {
+                createNewTrade();
+            }
+            
+            if (tradingInterval) clearInterval(tradingInterval);
+            tradingInterval = setInterval(checkTrades, 5000); // Kiểm tra lệnh thường xuyên hơn (5 giây)
+        }
+        
+        function stopAutoTrading() {
+            autoTradingActive = false;
+            document.getElementById('tradingStatus').textContent = 
+                `Trạng thái: Đã dừng | Số dư: $${virtualBalance.toFixed(2)} | Lệnh hôm nay: ${tradesToday}`;
+            
+            if (tradingInterval) {
+                clearInterval(tradingInterval);
+                tradingInterval = null;
+            }
+        }
+        
+        function createNewTrade() {
+            if (currentPriceData.close === 0 || !autoTradingActive) return;
+            const currentPrice = currentPriceData.close;
+            const stopLoss = parseFloat(document.getElementById('stopLoss').value);
+            const takeProfit = parseFloat(document.getElementById('takeProfit').value);
+
+            const isBuy = Math.random() > 0.5;
+            currentTrade = {
+                type: isBuy ? 'BUY' : 'SELL',
+                entryPrice: currentPrice,
+                entryTime: new Date().toLocaleString('vi-VN'),
+                stopLoss: isBuy ? currentPrice - stopLoss : currentPrice + stopLoss,
+                takeProfit: isBuy ? currentPrice + takeProfit : currentPrice - takeProfit,
+                lotSize: parseFloat(document.getElementById('lotSize').value),
+                leverage: parseInt(document.getElementById('leverage').value),
+                closed: false
+            };
+            tradesToday++;
+            
+            document.getElementById('activeTradeInfo').style.display = 'block';
+            updateTradeInfo();
+            
+            const timestamp = new Date().toLocaleString('vi-VN');
+            history.push({ 
+                time: timestamp, 
+                suggestion: `Mở lệnh ${currentTrade.type} @ ${currentPrice.toFixed(2)} | SL: ${currentTrade.stopLoss.toFixed(2)} | TP: ${currentTrade.takeProfit.toFixed(2)}`
+            });
+            updateHistoryUI();
+        }
+        
+        function checkTrades() {
+            if (!currentTrade || currentTrade.closed || currentPriceData.close === 0) return;
+            const currentPrice = currentPriceData.close;
+            const stopLoss = currentTrade.stopLoss;
+            const takeProfit = currentTrade.takeProfit;
+
+            let closeReason = '';
+            if ((currentTrade.type === 'BUY' && currentPrice <= stopLoss) || 
+                (currentTrade.type === 'SELL' && currentPrice >= stopLoss)) {
+                closeReason = 'STOP LOSS';
+            } else if ((currentTrade.type === 'BUY' && currentPrice >= takeProfit) || 
+                      (currentTrade.type === 'SELL' && currentPrice <= takeProfit)) {
+                closeReason = 'TAKE PROFIT';
+            }
+            
+            if (closeReason) {
+                closeCurrentTrade(currentPrice, closeReason);
+                if (autoTradingActive) {
+                    setTimeout(createNewTrade, 1000);
+                }
+            }
+            
+            updateTradeInfo();
+        }
+        
+        function closeCurrentTrade(closePrice, reason) {
+            if (!currentTrade) return;
+
+            let profit = 0;
+            if (currentTrade.type === 'BUY') {
+                profit = (closePrice - currentTrade.entryPrice) * currentTrade.lotSize * currentTrade.leverage;
+            } else {
+                profit = (currentTrade.entryPrice - closePrice) * currentTrade.lotSize * currentTrade.leverage;
+            }
+            
+            virtualBalance += profit;
+            currentTrade.closed = true;
+            currentTrade.exitPrice = closePrice;
+            currentTrade.exitTime = new Date().toLocaleString('vi-VN');
+            currentTrade.profit = profit;
+
+            const timestamp = new Date().toLocaleString('vi-VN');
+            history.push({ 
+                time: timestamp, 
+                suggestion: `Đóng lệnh ${currentTrade.type} @ ${closePrice.toFixed(2)} (${reason}) | Lợi nhuận: $${profit.toFixed(2)} | Số dư: $${virtualBalance.toFixed(2)}`
+            });
+            updateHistoryUI();
+            
+            playNotificationSound();
+
+            document.getElementById('tradingStatus').textContent = 
+                `Trạng thái: Đang chạy tự động | Số dư: $${virtualBalance.toFixed(2)} | Lệnh hôm nay: ${tradesToday}`;
+            
+            setTimeout(() => {
+                document.getElementById('activeTradeInfo').style.display = 'none';
+                currentTrade = null;
+            }, 5000);
+        }
+        
+        function updateTradeInfo() {
+            if (!currentTrade || currentPriceData.close === 0) return;
+            
+            const currentPrice = currentPriceData.close;
+            let profit = 0;
+            let profitClass = '';
+            
+            if (!currentTrade.closed) {
+                if (currentTrade.type === 'BUY') {
+                    profit = (currentPrice - currentTrade.entryPrice) * currentTrade.lotSize * currentTrade.leverage;
+                } else {
+                    profit = (currentTrade.entryPrice - currentPrice) * currentTrade.lotSize * currentTrade.leverage;
+                }
+                
+                profitClass = profit >= 0 ? 'profit' : 'loss';
+            } else {
+                profit = currentTrade.profit;
+                profitClass = profit >= 0 ? 'profit' : 'loss';
+            }
+            
+            const priceChange = currentTrade.type === 'BUY' 
+                ? ((currentPrice - currentTrade.entryPrice) / currentTrade.entryPrice * 100)
+                : ((currentTrade.entryPrice - currentPrice) / currentTrade.entryPrice * 100);
+            
+            const distanceToSL = currentTrade.type === 'BUY'
+                ? ((currentTrade.entryPrice - currentTrade.stopLoss) / currentTrade.entryPrice * 100)
+                : ((currentTrade.stopLoss - currentTrade.entryPrice) / currentTrade.entryPrice * 100);
+                
+            const distanceToTP = currentTrade.type === 'BUY'
+                ? ((currentTrade.takeProfit - currentTrade.entryPrice) / currentTrade.entryPrice * 100)
+                : ((currentTrade.entryPrice - currentTrade.takeProfit) / currentTrade.entryPrice * 100);
+            
+            document.getElementById('currentTradeDetails').innerHTML = `
+                <div class="trade-details">
+                    <p><strong>Loại lệnh:</strong> ${currentTrade.type} | <strong>Giá vào:</strong> ${currentTrade.entryPrice.toFixed(2)}</p>
+                    <p><strong>Thời gian mở:</strong> ${currentTrade.entryTime}</p>
+                    <p><strong>Giá hiện tại:</strong> ${currentPrice.toFixed(2)}</p>
+                    <p><strong>Lợi nhuận:</strong> <span class="${profitClass}">$${profit.toFixed(2)} (${priceChange.toFixed(2)}%)</span></p>
+                    <p><strong>Stop Loss:</strong> ${currentTrade.stopLoss.toFixed(2)} (${distanceToSL.toFixed(2)}%)</p>
+                    <p><strong>Take Profit:</strong> ${currentTrade.takeProfit.toFixed(2)} (${distanceToTP.toFixed(2)}%)</p>
+                    <p><strong>Khoảng cách tới SL:</strong> ${Math.abs((currentTrade.type === 'BUY' 
+                        ? (currentPrice - currentTrade.stopLoss) 
+                        : (currentTrade.stopLoss - currentPrice))).toFixed(2)} USD</p>
+                    <p><strong>Khoảng cách tới TP:</strong> ${Math.abs((currentTrade.type === 'BUY' 
+                        ? (currentTrade.takeProfit - currentPrice) 
+                        : (currentPrice - currentTrade.takeProfit))).toFixed(2)} USD</p>
+                </div>
+            `;
+            
+            if (autoTradingActive) {
+                document.getElementById('tradingStatus').textContent = 
+                    `Trạng thái: Đang chạy tự động | Số dư: $${virtualBalance.toFixed(2)} | Lệnh hôm nay: ${tradesToday}`;
+            }
+        }
+
+        function loadAudio(event) {
+            const file = event.target.files[0];
+            if (file) {
+                notificationAudio = new Audio(URL.createObjectURL(file));
+                console.log("Đã chọn file âm thanh:", file.name);
+            }
+        }
+
+        function playNotificationSound() {
+            if (notificationAudio) {
+                notificationAudio.play();
+                setTimeout(() => {
+                    notificationAudio.pause();
+                    notificationAudio.currentTime = 0;
+                }, 5000);
+            } else {
+                const audio = new Audio('https://www.soundjay.com/button/beep-07.wav');
+                audio.play();
+                setTimeout(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                }, 5000);
+            }
+        }
+
+        function playNotificationSoundContinuously() {
+            if (audioInterval) clearInterval(audioInterval);
+            if (notificationAudio) {
+                audioInterval = setInterval(() => {
+                    notificationAudio.play();
+                    setTimeout(() => {
+                        notificationAudio.pause();
+                        notificationAudio.currentTime = 0;
+                    }, 5000);
+                }, 6000);
+            } else {
+                const audio = new Audio('https://www.soundjay.com/button/beep-07.wav');
+                audioInterval = setInterval(() => {
+                    audio.play();
+                    setTimeout(() => {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    }, 5000);
+                }, 6000);
+            }
+        }
+
+        function stopAudio() {
+            if (audioInterval) {
+                clearInterval(audioInterval);
+                audioInterval = null;
+                if (notificationAudio) {
+                    notificationAudio.pause();
+                    notificationAudio.currentTime = 0;
+                }
+            }
+        }
+
+        function setPriceLevels() {
+            const input = document.getElementById('priceInput').value;
+            priceLevels = input.split(',').map(price => parseFloat(price.trim())).filter(price => !isNaN(price));
+            console.log("Mốc giá đã được thiết lập:", priceLevels);
+        }
+
+        function checkPriceCross(prices) {
+            const currentPrice = prices[prices.length - 1];
+            const previousPrice = prices[prices.length - 2] || currentPrice;
+
+            for (let level of priceLevels) {
+                if ((previousPrice < level && currentPrice >= level) || 
+                    (previousPrice > level && currentPrice <= level)) {
+                    if (lastPriceCrossed !== level) {
+                        lastPriceCrossed = level;
+                        playNotificationSoundContinuously();
+                        const timestamp = new Date().toLocaleString('vi-VN');
+                        history.push({ time: timestamp, suggestion: `Giá vượt mốc ${level} USD` });
+                        updateHistoryUI();
+                    }
+                    break;
+                }
+            }
+        }
+
+        function calculateKAMA(data, length, efficiencyRatioLength) {
+            const kama = [];
+            for (let i = 0; i < data.length; i++) {
+                if (i < length - 1) {
+                    kama.push(null);
+                    continue;
+                }
+                const prices = data.slice(Math.max(0, i - length + 1), i + 1);
+                const close = data[i];
+                const change = Math.abs(close - prices[0]);
+                let volatility = 0;
+                for (let j = 1; j < prices.length - 1; j++) {
+                    volatility += Math.abs(prices[j] - prices[j - 1]);
+                }
+                const efficiencyRatio = volatility ? change / volatility : 0;
+                const fastSC = 2 / (efficiencyRatioLength + 1);
+                const slowSC = 2 / (length + 1);
+                const sc = (efficiencyRatio * (fastSC - slowSC) + slowSC) ** 2;
+                if (i === length - 1) {
+                    kama.push(close);
+                } else {
+                    kama.push(kama[i - 1] + sc * (close - kama[i - 1]));
+                }
+            }
+            return kama;
+        }
+
+        function calculateVWMA(prices, volumes, length) {
+            const vwma = [];
+            for (let i = 0; i < prices.length; i++) {
+                if (i < length - 1) {
+                    vwma.push(null);
+                    continue;
+                }
+                let sumPriceVol = 0;
+                let sumVol = 0;
+                for (let j = Math.max(0, i - length + 1); j <= i; j++) {
+                    sumPriceVol += prices[j] * volumes[j];
+                    sumVol += volumes[j];
+                }
+                vwma.push(sumVol ? sumPriceVol / sumVol : null);
+            }
+            return vwma;
+        }
+
+        function calculateStochastic(highs, lows, closes, kLength, kSmoothing, dSmoothing) {
+            const k = [];
+            const d = [];
+            for (let i = 0; i < closes.length; i++) {
+                if (i < kLength - 1) {
+                    k.push(null);
+                    d.push(null);
+                    continue;
+                }
+                const periodHigh = Math.max(...highs.slice(Math.max(0, i - kLength + 1), i + 1));
+                const periodLow = Math.min(...lows.slice(Math.max(0, i - kLength + 1), i + 1));
+                const currentClose = closes[i];
+                const stoch = periodHigh !== periodLow ? ((currentClose - periodLow) / (periodHigh - periodLow)) * 100 : 0;
+                k.push(stoch);
+                if (i >= kLength + kSmoothing - 2) {
+                    const kPeriod = k.slice(Math.max(0, i - kSmoothing + 1), i + 1);
+                    d.push(kPeriod.reduce((a, b) => a + b, 0) / kSmoothing);
+                } else {
+                    d.push(null);
+                }
+            }
+            return { k, d };
+        }
+
+        // Hàm lấy dữ liệu OHLC từ CoinGecko cho biểu đồ (không dùng cho giá hiện tại)
+        async function fetchOHLCDataForChart() {
+            try {
+                // Lấy dữ liệu OHLC 1 ngày (mỗi giờ) cho biểu đồ
+                const response = await fetch('https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=1');
+                const data = await response.json();
+                btcData = data.map(d => ({
+                    time: new Date(d[0]).toLocaleTimeString('vi-VN'),
+                    open: d[1],
+                    high: d[2],
+                    low: d[3],
+                    close: d[4],
+                    volume: Math.random() * 1000000 // CoinGecko OHLC does not provide volume for 'days=1', so using random.
+                }));
+                return btcData;
+            } catch (error) {
+                console.error('Error fetching OHLC data:', error);
+                return [];
+            }
+        }
+
+        // Kết nối WebSocket để lấy giá BTC thời gian thực
+        function connectWebSocket() {
+            const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
+
+            ws.onmessage = (event) => {
+                const trade = JSON.parse(event.data);
+                const newPrice = parseFloat(trade.p); // Giá mới nhất
+                const tradeTime = new Date(trade.E).toLocaleTimeString('vi-VN');
+
+                // Cập nhật giá hiện tại
+                currentPriceData = {
+                    close: newPrice,
+                    high: Math.max(currentPriceData.high, newPrice), // Cập nhật high
+                    low: Math.min(currentPriceData.low, newPrice),   // Cập nhật low
+                    time: tradeTime
+                };
+
+                // Cập nhật thông tin lệnh nếu có lệnh đang chạy
+                if (currentTrade && !currentTrade.closed) {
+                    updateTradeInfo();
+                    checkTrades(); // Kiểm tra SL/TP ngay lập tức với giá mới nhất
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket Closed. Reconnecting...');
+                setTimeout(connectWebSocket, 5000); // Thử kết nối lại sau 5 giây
+            };
+        }
+
+        async function createChart() {
+            await fetchOHLCDataForChart(); // Lấy dữ liệu lịch sử cho biểu đồ
+            if (!btcData.length) return;
+
+            const prices = btcData.map(d => d.close);
+            const highs = btcData.map(d => d.high);
+            const lows = btcData.map(d => d.low);
+            const volumes = btcData.map(d => d.volume);
+            const timestamps = btcData.map(d => d.time);
+
+            const trendKAMA = calculateKAMA(prices, kamaParams.slowestEMATrend, kamaParams.efficiencyRatioTrend);
+            const fastKAMA = calculateKAMA(prices, kamaParams.slowestEMAFast, kamaParams.efficiencyRatioFast);
+            const fastestEMATrend = calculateKAMA(prices, kamaParams.fastestEMATrend, kamaParams.efficiencyRatioTrend);
+            const fastestEMAFast = calculateKAMA(prices, kamaParams.fastestEMAFast, kamaParams.efficiencyRatioFast);
+
+            const fastVWMA = calculateVWMA(prices, volumes, vwmaParams.fastLength);
+            const slowVWMA = calculateVWMA(prices, volumes, vwmaParams.slowLength);
+
+            const { k: stochK, d: stochD } = calculateStochastic(highs, lows, prices, 
+                stochasticParams.kLength, stochasticParams.kSmoothing, stochasticParams.dSmoothing);
+
+            const ctx = document.getElementById('btcChart').getContext('2d');
+            if (chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        { label: 'Giá BTC (Close)', data: prices, borderColor: 'blue', fill: false },
+                        { label: 'Trend KAMA (Slowest)', data: trendKAMA, borderColor: 'red', fill: false },
+                        { label: 'Fast KAMA', data: fastKAMA, borderColor: 'orange', fill: false },
+                        { label: 'Fastest EMA Trend', data: fastestEMATrend, borderColor: 'purple', fill: false },
+                        { label: 'Fastest EMA Fast', data: fastestEMAFast, borderColor: 'pink', fill: false },
+                        { label: 'Fast VWMA', data: fastVWMA, borderColor: 'green', fill: false },
+                        { label: 'Slow VWMA', data: slowVWMA, borderColor: 'teal', fill: false },
+                        {
+                            label: 'Stochastic %K', data: stochK, borderColor: 'yellow', fill: false, 
+                            yAxisID: 'stochasticAxis'
+                        },
+                        {
+                            label: 'Stochastic %D', data: stochD, borderColor: 'brown', fill: false, 
+                            yAxisID: 'stochasticAxis'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: false, title: { display: true, text: 'Giá (USD)' } },
+                        stochasticAxis: { 
+                            position: 'right', 
+                            beginAtZero: true, 
+                            max: 100, 
+                            title: { display: true, text: 'Stochastic (%)' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    },
+                    plugins: { legend: { position: 'top' } }
+                }
+            });
+
+            if (priceLevels.length > 0) checkPriceCross(prices);
+            
+            // updateTradeInfo() và checkTrades() sẽ được gọi bởi WebSocket onmessage
+        }
+
+        function updateHistoryUI() {
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = '';
+            history.forEach((entry, index) => {
+                const li = document.createElement('li');
+                li.textContent = `${entry.time}: ${entry.suggestion}`;
+                historyList.appendChild(li);
+            });
+        }
+
+        function clearHistory() {
+            history = [];
+            updateHistoryUI();
+        }
+
+        function updateChart() {
+            createChart();
+        }
+
+        // Tự động cập nhật biểu đồ mỗi 1 phút (chỉ cập nhật dữ liệu lịch sử và vẽ lại, giá hiện tại từ WebSocket)
+        setInterval(updateChart, 60000);
+
+        // Tải biểu đồ và kết nối WebSocket khi trang mở
+        window.onload = () => {
+            connectWebSocket(); // Bắt đầu kết nối WebSocket
+            createChart();     // Vẽ biểu đồ ban đầu với dữ liệu lịch sử
+        };
+    </script>
+</body>
+</html>
