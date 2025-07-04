@@ -215,7 +215,7 @@
             dSmoothing: 13
         };
         let btcData = []; // Sẽ chứa dữ liệu OHLC
-        let currentPriceData = { close: 0, high: 0, low: Infinity, time: '' }; // Lưu trữ giá hiện tại từ WebSocket, low khởi tạo Infinity
+        let currentPriceData = { close: 0, high: 0, low: 0, time: '' }; // Lưu trữ giá hiện tại từ WebSocket
         let chart;
         let history = [];
         let notificationAudio = null;
@@ -225,10 +225,10 @@
         
         let autoTradingActive = false;
         let currentTrade = null;
-        let tradesToday = 0; 
+        let tradesToday = 0; // Đổi tên thành totalTradesExecuted nếu muốn tổng cộng từ lúc bắt đầu chạy app
         let lastTradeDay = null;
         let virtualBalance = 1000;
-        // let tradingInterval = null; // ĐÃ XÓA DÒNG NÀY
+        let tradingInterval = null;
 
         function startAutoTrading() {
             virtualBalance = parseFloat(document.getElementById('virtualBalance').value);
@@ -244,43 +244,49 @@
                 lastTradeDay = today;
             }
             
+            // Đã comment bỏ kiểm tra giới hạn số lệnh/ngày để không bị dừng lại.
+            // if (tradesToday >= maxTradesPerDay) {
+            //     alert(`Đã đạt giới hạn ${maxTradesPerDay} lệnh/ngày!`);
+            //     return;
+            // }
+            
             autoTradingActive = true;
             document.getElementById('tradingStatus').textContent = 
                 `Trạng thái: Đang chạy tự động | Số dư: $${virtualBalance.toFixed(2)} | Lệnh hôm nay: ${tradesToday}${maxTradesPerDay !== 9999 ? '/' + maxTradesPerDay : ''}`;
             
-            // Nếu chưa có lệnh và có giá hiện tại, tạo lệnh mới ngay
-            if (!currentTrade && currentPriceData.close !== 0) {
+            if (!currentTrade) {
                 createNewTrade();
             }
             
-            // ĐÃ XÓA PHẦN SET INTERVAL (tradingInterval)
+            if (tradingInterval) clearInterval(tradingInterval);
+            tradingInterval = setInterval(checkTrades, 5000); // Kiểm tra lệnh thường xuyên hơn (5 giây)
         }
         
         function stopAutoTrading() {
             autoTradingActive = false;
-            const maxTradesPerDay = parseInt(document.getElementById('maxTradesPerDay').value);
+            const maxTradesPerDay = parseInt(document.getElementById('maxTradesPerDay').value); // Lấy lại giá trị để hiển thị
             document.getElementById('tradingStatus').textContent = 
                 `Trạng thái: Đã dừng | Số dư: $${virtualBalance.toFixed(2)} | Lệnh hôm nay: ${tradesToday}${maxTradesPerDay !== 9999 ? '/' + maxTradesPerDay : ''}`;
             
-            // if (tradingInterval) { // ĐÃ XÓA PHẦN CLEAR INTERVAL
-            //     clearInterval(tradingInterval);
-            //     tradingInterval = null;
-            // }
+            if (tradingInterval) {
+                clearInterval(tradingInterval);
+                tradingInterval = null;
+            }
         }
         
         function createNewTrade() {
             if (currentPriceData.close === 0 || !autoTradingActive) return;
             const currentPrice = currentPriceData.close;
-            const stopLossPoints = parseFloat(document.getElementById('stopLoss').value);
-            const takeProfitPoints = parseFloat(document.getElementById('takeProfit').value).toFixed(2); // Giữ nguyên TP là giá trị tuyệt đối
+            const stopLoss = parseFloat(document.getElementById('stopLoss').value);
+            const takeProfit = parseFloat(document.getElementById('takeProfit').value);
 
             const isBuy = Math.random() > 0.5;
             currentTrade = {
                 type: isBuy ? 'BUY' : 'SELL',
                 entryPrice: currentPrice,
                 entryTime: new Date().toLocaleString('vi-VN'),
-                stopLoss: isBuy ? currentPrice - stopLossPoints : currentPrice + stopLossPoints,
-                takeProfit: isBuy ? currentPrice + takeProfitPoints : currentPrice - takeProfitPoints,
+                stopLoss: isBuy ? currentPrice - stopLoss : currentPrice + stopLoss,
+                takeProfit: isBuy ? currentPrice + takeProfit : currentPrice - takeProfit,
                 lotSize: parseFloat(document.getElementById('lotSize').value),
                 leverage: parseInt(document.getElementById('leverage').value),
                 closed: false
@@ -298,53 +304,32 @@
             updateHistoryUI();
         }
         
-        // ĐÃ XÓA HÀM checkTrades CŨ
-        
-        // Tách hàm kiểm tra điều kiện SL/TP thành hàm riêng, được gọi từ WebSocket onmessage
-        function checkTradeConditions(currentPrice) {
-            if (!currentTrade || currentTrade.closed) return;
-
+        function checkTrades() {
+            if (!currentTrade || currentTrade.closed || currentPriceData.close === 0) return;
+            const currentPrice = currentPriceData.close;
             const stopLoss = currentTrade.stopLoss;
             const takeProfit = currentTrade.takeProfit;
+
             let closeReason = '';
-
-            // Debug log (có thể bỏ comment để theo dõi)
-            // console.log(`Kiểm tra lệnh ${currentTrade.type}: 
-            //     Giá vào: ${currentTrade.entryPrice.toFixed(2)}, 
-            //     Hiện tại: ${currentPrice.toFixed(2)}, 
-            //     SL: ${stopLoss.toFixed(2)}, 
-            //     TP: ${takeProfit.toFixed(2)}`);
-
-            if (currentTrade.type === 'BUY') {
-                if (currentPrice <= stopLoss) {
-                    closeReason = 'STOP LOSS';
-                } else if (currentPrice >= takeProfit) {
-                    closeReason = 'TAKE PROFIT';
-                }
-            } else { // SELL
-                if (currentPrice >= stopLoss) {
-                    closeReason = 'STOP LOSS';
-                } else if (currentPrice <= takeProfit) {
-                    closeReason = 'TAKE PROFIT';
-                }
+            if ((currentTrade.type === 'BUY' && currentPrice <= stopLoss) || 
+                (currentTrade.type === 'SELL' && currentPrice >= stopLoss)) {
+                closeReason = 'STOP LOSS';
+            } else if ((currentTrade.type === 'BUY' && currentPrice >= takeProfit) || 
+                      (currentTrade.type === 'SELL' && currentPrice <= takeProfit)) {
+                closeReason = 'TAKE PROFIT';
             }
-
+            
             if (closeReason) {
-                // console.log(`Đóng lệnh do ${closeReason}`); // Debug log
                 closeCurrentTrade(currentPrice, closeReason);
-                
-                // Tạo lệnh mới sau khi đóng (nếu vẫn trong chế độ auto trading)
                 if (autoTradingActive) {
-                    setTimeout(() => {
-                        // Kiểm tra lại trạng thái autoTradingActive và không có lệnh nào đang mở
-                        if (autoTradingActive && !currentTrade) { 
-                            createNewTrade();
-                        }
-                    }, 2000); // Khoảng nghỉ 2 giây
+                    // Khoảng nghỉ 2 giây trước khi vòng lặp mới bắt đầu
+                    setTimeout(createNewTrade, 2000); 
                 }
             }
+            
+            updateTradeInfo();
         }
-
+        
         function closeCurrentTrade(closePrice, reason) {
             if (!currentTrade) return;
 
@@ -370,11 +355,10 @@
             
             playNotificationSound();
 
-            const maxTradesPerDay = parseInt(document.getElementById('maxTradesPerDay').value);
+            const maxTradesPerDay = parseInt(document.getElementById('maxTradesPerDay').value); // Lấy lại giá trị để hiển thị
             document.getElementById('tradingStatus').textContent = 
                 `Trạng thái: Đang chạy tự động | Số dư: $${virtualBalance.toFixed(2)} | Lệnh hôm nay: ${tradesToday}${maxTradesPerDay !== 9999 ? '/' + maxTradesPerDay : ''}`;
             
-            // Xóa thông tin lệnh hiện tại sau 5 giây để hiển thị lại "Lệnh hiện tại" khi lệnh mới được tạo
             setTimeout(() => {
                 document.getElementById('activeTradeInfo').style.display = 'none';
                 currentTrade = null;
@@ -431,7 +415,7 @@
             `;
             
             if (autoTradingActive) {
-                const maxTradesPerDay = parseInt(document.getElementById('maxTradesPerDay').value);
+                const maxTradesPerDay = parseInt(document.getElementById('maxTradesPerDay').value); // Lấy lại giá trị để hiển thị
                 document.getElementById('tradingStatus').textContent = 
                     `Trạng thái: Đang chạy tự động | Số dư: $${virtualBalance.toFixed(2)} | Lệnh hôm nay: ${tradesToday}${maxTradesPerDay !== 9999 ? '/' + maxTradesPerDay : ''}`;
             }
@@ -610,70 +594,40 @@
             }
         }
 
-        // Kết nối WebSocket để lấy giá BTC thời gian thực và xử lý logic giao dịch
+        // Kết nối WebSocket để lấy giá BTC thời gian thực
         function connectWebSocket() {
             const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
 
             ws.onmessage = (event) => {
-                try {
-                    const trade = JSON.parse(event.data);
-                    const newPrice = parseFloat(trade.p);
-                    
-                    // Kiểm tra giá hợp lệ
-                    if (isNaN(newPrice)) {
-                        console.error('Giá nhận được không hợp lệ:', trade.p);
-                        return;
-                    }
+                const trade = JSON.parse(event.data);
+                const newPrice = parseFloat(trade.p); // Giá mới nhất
+                const tradeTime = new Date(trade.E).toLocaleTimeString('vi-VN');
 
-                    const tradeTime = new Date(trade.E).toLocaleTimeString('vi-VN');
+                // Cập nhật giá hiện tại
+                currentPriceData = {
+                    close: newPrice,
+                    high: Math.max(currentPriceData.high, newPrice), // Cập nhật high
+                    low: Math.min(currentPriceData.low, newPrice),   // Cập nhật low
+                    time: tradeTime
+                };
 
-                    // Cập nhật giá hiện tại
-                    // Đảm bảo high và low được khởi tạo đúng cách nếu đây là giá đầu tiên
-                    if (currentPriceData.close === 0) { // Nếu là giá đầu tiên
-                         currentPriceData = {
-                            close: newPrice,
-                            high: newPrice,
-                            low: newPrice,
-                            time: tradeTime
-                        };
-                    } else {
-                        currentPriceData = {
-                            close: newPrice,
-                            high: Math.max(currentPriceData.high, newPrice),
-                            low: Math.min(currentPriceData.low, newPrice),
-                            time: tradeTime
-                        };
-                    }
-
-                    // Chỉ kiểm tra lệnh khi đang trong chế độ auto trading
-                    if (autoTradingActive) {
-                        // Nếu không có lệnh nào đang chạy, tạo lệnh mới
-                        if (!currentTrade) {
-                            createNewTrade();
-                        } 
-                        // Nếu có lệnh đang chạy, kiểm tra SL/TP
-                        else if (!currentTrade.closed) {
-                            checkTradeConditions(newPrice);
-                        }
-                    }
-                    
-                    // Cập nhật thông tin lệnh trên giao diện (nếu có lệnh)
+                // Cập nhật thông tin lệnh nếu có lệnh đang chạy
+                if (currentTrade && !currentTrade.closed) {
                     updateTradeInfo();
-
-                } catch (error) {
-                    console.error('Lỗi xử lý tin nhắn WebSocket:', error);
+                    checkTrades(); // Kiểm tra SL/TP ngay lập tức với giá mới nhất
+                } else if (autoTradingActive && currentTrade === null) {
+                    // Nếu đang tự động giao dịch mà chưa có lệnh, thử tạo lệnh mới
+                    createNewTrade();
                 }
             };
 
             ws.onerror = (error) => {
-                console.error('Lỗi WebSocket:', error);
-                document.getElementById('tradingStatus').textContent += ' (Lỗi kết nối)';
+                console.error('WebSocket Error:', error);
             };
 
             ws.onclose = () => {
-                console.log('WebSocket đã đóng. Đang kết nối lại...');
-                document.getElementById('tradingStatus').textContent += ' (Đang kết nối lại...)';
-                setTimeout(connectWebSocket, 5000);
+                console.log('WebSocket Closed. Reconnecting...');
+                setTimeout(connectWebSocket, 5000); // Thử kết nối lại sau 5 giây
             };
         }
 
@@ -739,6 +693,8 @@
             });
 
             if (priceLevels.length > 0) checkPriceCross(prices);
+            
+            // updateTradeInfo() và checkTrades() sẽ được gọi bởi WebSocket onmessage
         }
 
         function updateHistoryUI() {
